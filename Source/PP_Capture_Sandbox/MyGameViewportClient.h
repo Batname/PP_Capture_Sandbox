@@ -7,8 +7,8 @@
 #include "MyGameViewportClient.generated.h"
 
 
-DECLARE_MULTICAST_DELEGATE_ThreeParams(FOnDimencoScreenshotCaptured, int32 /*Width*/, int32 /*Height*/, const TArray<FColor>& /*Colors*/);
-
+//DECLARE_MULTICAST_DELEGATE_ThreeParams(FOnDimencoScreenshotCaptured, int32 /*Width*/, int32 /*Height*/, const TArray<FColor>& /*Colors*/);
+DECLARE_MULTICAST_DELEGATE(FOnDimencoScreenshotCaptured);
 /**
  * 
  */
@@ -39,5 +39,13 @@ private:
 
 	/** Delegate called at the end of the frame when a screenshot is captured */
 	static FOnDimencoScreenshotCaptured DimencoScreenshotCapturedDelegate;
-	
+
+	int FrameDelay = 10;
+	int FrameDelayCounter = 0;
+	bool bIsCounting = false;
+
+public:
+	FVector ScreenshotViewLocation = FVector::ZeroVector;
+
+	int ScreenShotCounter = 0;
 };

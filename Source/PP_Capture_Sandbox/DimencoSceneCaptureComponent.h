@@ -49,7 +49,8 @@ protected:
 
 	/*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Miscellaneous ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 private:
-	APlayerController* PlayerController = nullptr;
+	class APlayerController* PlayerController = nullptr;
+	class AGameModeBase* GameMode;
 
 public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dimenco")
@@ -64,5 +65,11 @@ public:
 private:
 	IImageWrapperModule& ImageWrapperModule;
 
-	void OnDimencoScreenshotCaptured(int32 Width, int32 Height, const TArray<FColor>& Colors);
+	class UMyGameViewportClient* MyGameViewportClient;
+	class FViewport* Viewport;
+
+	void OnDimencoScreenshotCaptured();
+
+	int ScreenShotCounter = 0;
+	bool bIsRunning = false;
 };

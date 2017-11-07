@@ -22,6 +22,11 @@
 
 #include "Runtime/Engine/Public/Slate/SceneViewport.h"
 
+#include "Runtime/Engine/Classes/GameFramework/PlayerController.h"
+
+#include "Runtime/Engine/Public/TimerManager.h"
+#include "Runtime/Engine/Classes/GameFramework/GameModeBase.h"
+#include "Runtime/Engine/Classes/Engine/GameViewportClient.h"
 
 // Sets default values for this component's properties
 UDimencoSceneCaptureComponent::UDimencoSceneCaptureComponent(FVTableHelper& Helper)
@@ -52,11 +57,19 @@ void UDimencoSceneCaptureComponent::BeginPlay()
 	// Set reference to player controller
 	PlayerController = UGameplayStatics::GetPlayerController(GetWorld(), 0);
 
+	GameMode = UGameplayStatics::GetGameMode(GWorld);
+
 	// Register slate rendered delegate
 	FSlateRenderer* SlateRenderer = FSlateApplication::Get().GetRenderer();//.Get();
 	SlateRenderer->OnSlateWindowRendered().RemoveAll(this);
 	SlateRenderer->OnSlateWindowRendered().AddUObject(this, &UDimencoSceneCaptureComponent::OnSlateRendered);
-	
+
+	UMyGameViewportClient::OnDimencoScreenshotCaptured().AddUObject(this, &UDimencoSceneCaptureComponent::OnDimencoScreenshotCaptured);	
+
+	MyGameViewportClient = Cast<UMyGameViewportClient>(GEngine->GameViewport);
+	Viewport = MyGameViewportClient->Viewport;
+
+	PlayerController->ConsoleCommand(TEXT("r.HighResScreenshotDelay 0"), true);
 }
 
 
@@ -76,6 +89,13 @@ void UDimencoSceneCaptureComponent::TickComponent(float DeltaTime, ELevelTick Ti
 			ViewportPositionGeometry = ViewportGeometry.LocalToAbsolute(FVector2D::ZeroVector);
 			ViewportSizeGeometry = ViewportGeometry.GetLocalSize();
 		}
+	}
+
+	if (bIsRunning && ScreenShotCounter == 1)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("TickComponent"));
+		ScreenShotCounter = 0;
+		TakeScreenShot();
 	}
 }
 
@@ -255,26 +275,27 @@ void UDimencoSceneCaptureComponent::OnSlateRendered(SWindow & SlateWindow, void 
 
 void UDimencoSceneCaptureComponent::TakeScreenShot()
 {
-	UE_LOG(LogTemp, Warning, TEXT("TakeScreenShot"));
-
-	UMyGameViewportClient* MyGameViewportClient = Cast<UMyGameViewportClient>(GEngine->GameViewport);
-	UE_LOG(LogTemp, Warning, TEXT("MyGameViewportClient %p"), MyGameViewportClient);
-
-
-	FViewport* Viewport = GEngine->GameViewport->Viewport;
-
-	FVector		PlayerLocation;
-	FRotator	PlayerRotation;
-	PlayerController->GetPlayerViewPoint(PlayerLocation, PlayerRotation);
-	UE_LOG(LogTemp, Warning, TEXT("PlayerLocation %s"), *PlayerLocation.ToString());
-
-
-
-	PlayerController->SetPause(true);
+	GameMode->SetPause(PlayerController);
 	PlayerController->ConsoleCommand(TEXT("HighResShot 3840x2160"), true);
+	UE_LOG(LogTemp, Warning, TEXT(">>UDimencoSceneCaptureComponent::TakeScreenShot"));
 
-	UMyGameViewportClient::OnDimencoScreenshotCaptured().AddUObject(this, &UDimencoSceneCaptureComponent::OnDimencoScreenshotCaptured);
+	bIsRunning = true;
 }
+
+void UDimencoSceneCaptureComponent::OnDimencoScreenshotCaptured()
+{
+	UE_LOG(LogTemp, Warning, TEXT(">>UDimencoSceneCaptureComponent::OnDimencoScreenshotCaptured ScreenShotCounter %d"), ScreenShotCounter);
+
+	if (ScreenShotCounter == 1)
+	{
+		GameMode->ClearPause();
+		return;
+	}
+
+	TakeScreenShot();
+	ScreenShotCounter++;
+}
+
 
 void UDimencoSceneCaptureComponent::SaveCaptureComponent(const TArray<FColor>& SeparateImg, int32 Index, const FString & Name, EImageFormat Format, float Width, float Height)
 {
@@ -291,8 +312,4 @@ void UDimencoSceneCaptureComponent::SaveCaptureComponent(const TArray<FColor>& S
 	FFileHelper::SaveArrayToFile(CompressedImageData, *Filename);
 }
 
-void UDimencoSceneCaptureComponent::OnDimencoScreenshotCaptured(int32 Width, int32 Height, const TArray<FColor>& Colors)
-{
-	UE_LOG(LogTemp, Warning, TEXT("UDimencoSceneCaptureComponent::OnDimencoScreenshotCaptured"));
-}
 

@@ -167,8 +167,7 @@ void UMyGameViewportClient::Draw(FViewport* InViewport, FCanvas* SceneCanvas)
 	FIntPoint DebugCanvasSize = InViewport->GetSizeXY();
 	static FName DebugCanvasObjectName(TEXT("DebugCanvasObject"));
 	UCanvas* DebugCanvasObject = GetCanvasByName(DebugCanvasObjectName);
-	DebugCanvasObject->Canvas = DebugCanvas;
-	DebugCanvasObject->Init(DebugCanvasSize.X, DebugCanvasSize.Y, NULL);
+	DebugCanvasObject->Init(DebugCanvasSize.X, DebugCanvasSize.Y, NULL, DebugCanvas);
 
 	static const auto DebugCanvasInLayerCVar = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("vr.DebugCanvasInLayer"));
 	const bool bDebugInLayer = bStereoRendering && (DebugCanvasInLayerCVar && DebugCanvasInLayerCVar->GetValueOnAnyThread() != 0);
@@ -294,11 +293,30 @@ void UMyGameViewportClient::Draw(FViewport* InViewport, FCanvas* SceneCanvas)
 				// TEST CODE
 				if (GIsDumpingMovie || FScreenshotRequest::IsScreenshotRequested() || GIsHighResScreenshot)
 				{
-					ViewLocation += FVector(-1000.f, 0.f, 0.f);
+					FVector		PlayerLocation;
+					FRotator	PlayerRotation;
+					PlayerController->GetPlayerViewPoint(PlayerLocation, PlayerRotation);
+
+					float VirtualCameraOffsetZ = 0.f;
+					float YFactor;
+					if (ScreenShotCounter)
+					{
+						YFactor = 1.f;
+						ScreenShotCounter = 0;
+					}
+					else
+					{
+						YFactor = -1.f;
+						ScreenShotCounter++;
+					}
+
+					FVector CameraOffset = FVector(0.f, YFactor * 3.f, 0.f) + FVector(VirtualCameraOffsetZ, 0.f, 0.f);
+					FVector RotationVector = PlayerRotation.Quaternion().RotateVector(CameraOffset);
+
+					ViewLocation = PlayerLocation + RotationVector;
 					View->ViewLocation = ViewLocation;
 					View->UpdateViewMatrix();
-					//View->ViewMatrices = FViewMatrices();
-					UE_LOG(LogTemp, Warning, TEXT("View->ViewLocation.ToString %s"), *View->ViewLocation.ToString());
+					UE_LOG(LogTemp, Warning, TEXT("View->ViewLocation.ToString %s %d"), *View->ViewLocation.ToString(), ScreenShotCounter);
 				}
 				// TEST CODE
 
@@ -534,7 +552,7 @@ void UMyGameViewportClient::Draw(FViewport* InViewport, FCanvas* SceneCanvas)
 						// rendering to directly to viewport target
 						FVector CanvasOrigin(FMath::TruncToFloat(View->UnscaledViewRect.Min.X), FMath::TruncToInt(View->UnscaledViewRect.Min.Y), 0.f);
 
-						CanvasObject->Init(View->UnscaledViewRect.Width(), View->UnscaledViewRect.Height(), View);
+						CanvasObject->Init(View->UnscaledViewRect.Width(), View->UnscaledViewRect.Height(), View, SceneCanvas);
 
 						// Set the canvas transform for the player's view rectangle.
 						check(SceneCanvas);
@@ -604,7 +622,7 @@ void UMyGameViewportClient::Draw(FViewport* InViewport, FCanvas* SceneCanvas)
 		{
 			// Reset the debug canvas to be full-screen before drawing the console
 			// (the debug draw service above has messed with the viewport size to fit it to a single player's subregion)
-			DebugCanvasObject->Init(DebugCanvasSize.X, DebugCanvasSize.Y, NULL);
+			DebugCanvasObject->Init(DebugCanvasSize.X, DebugCanvasSize.Y, NULL, DebugCanvas);
 
 			ViewportConsole->PostRender_Console(DebugCanvasObject);
 		}
@@ -641,7 +659,6 @@ void UMyGameViewportClient::Draw(FViewport* InViewport, FCanvas* SceneCanvas)
 void UMyGameViewportClient::ProcessScreenShots(FViewport* InViewport)
 {
 	//Super::ProcessScreenShots(Viewport);
-
 	if (GIsDumpingMovie || FScreenshotRequest::IsScreenshotRequested() || GIsHighResScreenshot)
 	{
 		TArray<FColor> Bitmap;
@@ -708,17 +725,31 @@ void UMyGameViewportClient::ProcessScreenShots(FViewport* InViewport)
 
 				// Save the contents of the array to a png file.
 				TArray<uint8> CompressedBitmap;
-				FImageUtils::CompressImageArray(Size.X, Size.Y, Bitmap, CompressedBitmap);
-				FFileHelper::SaveArrayToFile(CompressedBitmap, *ScreenShotName);
+				if (ScreenShotCounter)
+				{
+					FImageUtils::CompressImageArray(Size.X, Size.Y, Bitmap, CompressedBitmap);
+					FFileHelper::SaveArrayToFile(CompressedBitmap, *ScreenShotName);
+				}
 
 				UE_LOG(LogTemp, Warning, TEXT("SaveArrayToFile"));
-				OnDimencoScreenshotCaptured().Broadcast(Size.X, Size.Y, Bitmap);
-
+				bIsCounting = true;
 			}
 		}
 
 		FScreenshotRequest::Reset();
 		// Reeanble screen messages - if we are NOT capturing a movie
 		GAreScreenMessagesEnabled = GScreenMessagesRestoreState;
+	}
+
+	if (bIsCounting)
+	{
+		if (FrameDelayCounter == FrameDelay)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("UMyGameViewportClient::ProcessScreenShot"));
+			OnDimencoScreenshotCaptured().Broadcast();
+			FrameDelayCounter = 0;
+			bIsCounting = false;
+		}
+		FrameDelayCounter++;
 	}
 }
