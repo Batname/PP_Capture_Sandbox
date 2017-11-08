@@ -60,7 +60,7 @@ public:
 	void TakeScreenShot();
 	
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Save capture ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
-	void SaveCaptureComponent(const TArray<FColor>& SeparateImg, int32 Index, const FString& Name, EImageFormat Format, float Width, float Height);
+	void SaveCaptureComponent(const TArray<FColor>& SeparateImg, int32 Index, const FString& Name, EImageFormat Format, int32 Width, int32 Height);
 
 private:
 	IImageWrapperModule& ImageWrapperModule;

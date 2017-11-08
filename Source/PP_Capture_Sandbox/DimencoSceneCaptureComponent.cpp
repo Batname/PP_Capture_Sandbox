@@ -297,11 +297,11 @@ void UDimencoSceneCaptureComponent::OnDimencoScreenshotCaptured()
 }
 
 
-void UDimencoSceneCaptureComponent::SaveCaptureComponent(const TArray<FColor>& SeparateImg, int32 Index, const FString & Name, EImageFormat Format, float Width, float Height)
+void UDimencoSceneCaptureComponent::SaveCaptureComponent(const TArray<FColor>& SeparateImg, int32 Index, const FString & Name, EImageFormat Format, int32 Width, int32 Height)
 {
 	// Generate name
 	FString Timestamp = FString::Printf(TEXT("%s"), *FDateTime::Now().ToString());
-	FString FrameString = FString::Printf(TEXT("%s.png"), *Name);
+	FString FrameString = FString::Printf(TEXT("%d_%s.png"), *Name, Index);
 	FString OutputDir = FPaths::ProjectSavedDir() / TEXT("Dimenco");
 	FString Filename = OutputDir / Timestamp / FrameString;
 

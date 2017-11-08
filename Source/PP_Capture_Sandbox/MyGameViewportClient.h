@@ -6,8 +6,8 @@
 #include "Engine/GameViewportClient.h"
 #include "MyGameViewportClient.generated.h"
 
-
 //DECLARE_MULTICAST_DELEGATE_ThreeParams(FOnDimencoScreenshotCaptured, int32 /*Width*/, int32 /*Height*/, const TArray<FColor>& /*Colors*/);
+
 DECLARE_MULTICAST_DELEGATE(FOnDimencoScreenshotCaptured);
 /**
  * 
@@ -48,4 +48,6 @@ public:
 	FVector ScreenshotViewLocation = FVector::ZeroVector;
 
 	int ScreenShotCounter = 0;
+
+	FString ScreenShotTimestampFolder = "Win";
 };

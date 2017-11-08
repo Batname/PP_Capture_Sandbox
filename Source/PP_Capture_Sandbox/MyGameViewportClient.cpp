@@ -142,6 +142,65 @@ static UCanvas* GetCanvasByName(FName CanvasName)
 	return *FoundCanvas;
 }
 
+static FMatrix _AdjustProjectionMatrixForRHI(const FMatrix& InProjectionMatrix)
+{
+	const float GMinClipZ = 0.0f;
+	const float GProjectionSignY = 1.0f;
+
+	FScaleMatrix ClipSpaceFixScale(FVector(1.0f, GProjectionSignY, 1.0f - GMinClipZ));
+	FTranslationMatrix ClipSpaceFixTranslate(FVector(0.0f, 0.0f, GMinClipZ));
+	return InProjectionMatrix * ClipSpaceFixScale * ClipSpaceFixTranslate;
+}
+
+static void UpdateProjectionMatrix(FSceneView* View, FMatrix OffAxisMatrix, FVector ViewLocation, FRotator ViewRotation)
+{
+	View->ProjectionMatrixUnadjustedForRHI = OffAxisMatrix;
+
+	FMatrix* pInvViewMatrix = (FMatrix*)(&View->ViewMatrices.GetInvViewMatrix());
+	*pInvViewMatrix = View->ViewMatrices.GetViewMatrix().Inverse();
+
+	FVector* pPreViewTranslation = (FVector*)(&View->ViewMatrices.GetPreViewTranslation());
+	*pPreViewTranslation = -View->ViewMatrices.GetViewOrigin();
+
+	FMatrix* pProjectionMatrix = (FMatrix*)(&View->ViewMatrices.GetProjectionMatrix());
+	*pProjectionMatrix = _AdjustProjectionMatrixForRHI(View->ProjectionMatrixUnadjustedForRHI);
+
+	FMatrix TranslatedViewMatrix = FTranslationMatrix(-View->ViewMatrices.GetPreViewTranslation()) * View->ViewMatrices.GetViewMatrix();
+	FMatrix* pTranslatedViewProjectionMatrix = (FMatrix*)(&View->ViewMatrices.GetTranslatedViewProjectionMatrix());
+	*pTranslatedViewProjectionMatrix = TranslatedViewMatrix * View->ViewMatrices.GetProjectionMatrix();
+
+	// BAT CODE
+	View->ViewLocation = ViewLocation;
+	View->UpdateViewMatrix();
+
+	FMatrix* pInvTranslatedViewProjectionMatrixx = (FMatrix*)(&View->ViewMatrices.GetInvTranslatedViewProjectionMatrix());
+	*pInvTranslatedViewProjectionMatrixx = View->ViewMatrices.GetTranslatedViewProjectionMatrix().Inverse();
+	View->ShadowViewMatrices = View->ViewMatrices;
+
+	GetViewFrustumBounds(View->ViewFrustum, View->ViewMatrices.GetViewProjectionMatrix(), false);
+}
+
+static FMatrix GetStereoProjectionMatrix(enum EStereoscopicPass StereoPassType)
+{
+	const float ProjectionCenterOffset = 0; // 0.151976421f;
+	const float PassProjectionOffset = (StereoPassType == eSSP_LEFT_EYE) ? ProjectionCenterOffset : -ProjectionCenterOffset;
+
+	const float HalfFov = 2.19686294f / 2.f;
+	const float InWidth = 640.f;
+	const float InHeight = 480.f;
+	const float XS = 1.0f / tan(HalfFov);
+	const float YS = InWidth / tan(HalfFov) / InHeight;
+
+	const float InNearZ = GNearClippingPlane;
+	return FMatrix(
+		FPlane(XS, 0.0f, 0.0f, 0.0f),
+		FPlane(0.0f, YS, 0.0f, 0.0f),
+		FPlane(0.0f, 0.0f, 0.0f, 1.0f),
+		FPlane(0.0f, 0.0f, InNearZ, 0.0f))
+
+		* FTranslationMatrix(FVector(PassProjectionOffset, 0, 0));
+}
+
 UMyGameViewportClient::UMyGameViewportClient(const FObjectInitializer & ObjectInitializer)
 	: Super(ObjectInitializer)
 {
@@ -299,6 +358,8 @@ void UMyGameViewportClient::Draw(FViewport* InViewport, FCanvas* SceneCanvas)
 
 					float VirtualCameraOffsetZ = 0.f;
 					float YFactor;
+
+					FMatrix StereoProjectionMatrix;
 					if (ScreenShotCounter)
 					{
 						YFactor = 1.f;
@@ -308,14 +369,25 @@ void UMyGameViewportClient::Draw(FViewport* InViewport, FCanvas* SceneCanvas)
 					{
 						YFactor = -1.f;
 						ScreenShotCounter++;
+						ScreenShotTimestampFolder = FString::Printf(TEXT("%s"), *FDateTime::Now().ToString());
 					}
 
 					FVector CameraOffset = FVector(0.f, YFactor * 3.f, 0.f) + FVector(VirtualCameraOffsetZ, 0.f, 0.f);
 					FVector RotationVector = PlayerRotation.Quaternion().RotateVector(CameraOffset);
 
 					ViewLocation = PlayerLocation + RotationVector;
-					View->ViewLocation = ViewLocation;
-					View->UpdateViewMatrix();
+					
+					if (ScreenShotCounter)
+					{
+						StereoProjectionMatrix = GetStereoProjectionMatrix(EStereoscopicPass::eSSP_RIGHT_EYE);
+						UpdateProjectionMatrix(View, StereoProjectionMatrix, ViewLocation, ViewRotation);
+					}
+					else
+					{
+						StereoProjectionMatrix = GetStereoProjectionMatrix(EStereoscopicPass::eSSP_LEFT_EYE);
+						UpdateProjectionMatrix(View, StereoProjectionMatrix, ViewLocation, ViewRotation);
+					}
+					
 					UE_LOG(LogTemp, Warning, TEXT("View->ViewLocation.ToString %s %d"), *View->ViewLocation.ToString(), ScreenShotCounter);
 				}
 				// TEST CODE
@@ -672,6 +744,7 @@ void UMyGameViewportClient::ProcessScreenShots(FViewport* InViewport)
 
 		bool bScreenshotSuccessful = false;
 		FIntVector Size(InViewport->GetSizeXY().X, InViewport->GetSizeXY().Y, 0);
+
 		if (bShowUI && FSlateApplication::IsInitialized())
 		{
 			TSharedRef<SWidget> WindowRef = WindowPtr.ToSharedRef();
@@ -686,6 +759,7 @@ void UMyGameViewportClient::ProcessScreenShots(FViewport* InViewport)
 
 		if (bScreenshotSuccessful)
 		{
+
 			if (OnScreenshotCaptured().IsBound() && CVarScreenshotDelegate.GetValueOnGameThread())
 			{
 				// Ensure that all pixels' alpha is set to 255
@@ -723,16 +797,21 @@ void UMyGameViewportClient::ProcessScreenShots(FViewport* InViewport)
 					ScreenShotName += TEXT(".png");
 				}
 
-				// Save the contents of the array to a png file.
-				TArray<uint8> CompressedBitmap;
-				if (ScreenShotCounter)
-				{
-					FImageUtils::CompressImageArray(Size.X, Size.Y, Bitmap, CompressedBitmap);
-					FFileHelper::SaveArrayToFile(CompressedBitmap, *ScreenShotName);
-				}
+
 
 				UE_LOG(LogTemp, Warning, TEXT("SaveArrayToFile"));
 				bIsCounting = true;
+
+				FString FrameString = FString::Printf(TEXT("%d_MultiScreenShot.png"), ScreenShotCounter);
+				FString OutputDir = FPaths::ProjectSavedDir() / TEXT("Dimenco");
+				FString Filename = OutputDir / ScreenShotTimestampFolder / FrameString;
+
+
+				// Save the contents of the array to a png file.
+				TArray<uint8> CompressedBitmap;
+				FImageUtils::CompressImageArray(Size.X, Size.Y, Bitmap, CompressedBitmap);
+				//FFileHelper::SaveArrayToFile(CompressedBitmap, *ScreenShotName);
+				FFileHelper::SaveArrayToFile(CompressedBitmap, *Filename);
 			}
 		}
 
