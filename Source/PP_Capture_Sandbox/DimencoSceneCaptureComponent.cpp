@@ -68,7 +68,6 @@ void UDimencoSceneCaptureComponent::BeginPlay()
 
 	MyGameViewportClient = Cast<UMyGameViewportClient>(GEngine->GameViewport);
 	Viewport = MyGameViewportClient->Viewport;
-
 	PlayerController->ConsoleCommand(TEXT("r.HighResScreenshotDelay 0"), true);
 }
 
